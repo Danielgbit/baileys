@@ -85,7 +85,17 @@ async function startBot() {
         if (connection === 'open') {
             console.log('✅ Conectado a WhatsApp')
             isRestarting = false
+
+            // 🔹 NÚMERO DESTINO (sin + ni espacios)
+            const numero = '573193307313'
+            const jid = `${numero}@s.whatsapp.net`
+
+            // 🔹 ENVIAR MENSAJE
+            await sock?.sendMessage(jid, {
+                text: 'Hola 👋 este mensaje lo envía mi bot'
+            })
         }
+
 
         // Desconectado
         if (connection === 'close') {
@@ -139,8 +149,8 @@ async function startBot() {
 
         console.log('📩', jid, text)
 
-        // Respuesta simple
-        await sock?.sendMessage(jid, { text: 'Hola 👋' })
+        /*     // Respuesta simple
+            await sock?.sendMessage(jid, { text: 'Hola 👋' }) */
     })
 }
 

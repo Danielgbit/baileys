@@ -1,4 +1,3 @@
-// src/index.ts
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -6,13 +5,13 @@ import makeWASocket, {
 } from 'baileys'
 import P from 'pino'
 import { Boom } from '@hapi/boom'
-import { setSocket } from './whatsapp'
+import { setSocket, setQR } from './state'
 import { startServer } from './server'
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth')
 
-    const sock = makeWASocket({
+    const socket = makeWASocket({
         auth: state,
         logger: P({ level: 'silent' }),
         browser: Browsers.macOS('Desktop'),
@@ -21,14 +20,17 @@ async function startBot() {
         getMessage: async () => undefined
     })
 
-    setSocket(sock)
+    setSocket(socket)
 
-    sock.ev.on('creds.update', saveCreds)
+    socket.ev.on('creds.update', saveCreds)
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update
+    socket.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update
+
+        if (qr) setQR(qr)
 
         if (connection === 'open') {
+            setQR(null)
             console.log('✅ WhatsApp conectado')
         }
 
@@ -41,7 +43,7 @@ async function startBot() {
             console.log('❌ Conexión cerrada', reason)
 
             if (reason === DisconnectReason.loggedOut) {
-                console.log('🚫 Sesión cerrada, borra auth/')
+                console.log('🚫 Sesión cerrada')
                 process.exit(1)
             }
 

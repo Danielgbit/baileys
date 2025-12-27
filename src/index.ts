@@ -43,9 +43,11 @@ async function startBot() {
             console.log('❌ Conexión cerrada', reason)
 
             if (reason === DisconnectReason.loggedOut) {
-                console.log('🚫 Sesión cerrada')
-                process.exit(1)
+                console.log('🚫 Sesión cerrada, esperando nuevo QR')
+                setQR(null)
+                return
             }
+
 
             startBot()
         }

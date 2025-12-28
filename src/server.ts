@@ -1,4 +1,5 @@
-import { currentQR, setQR, sock } from './state'
+//src/server.ts
+import { currentQR, setQR, sock, isConnected } from './state'
 import { SendWhatsAppMessagePayload } from './types'
 import { sendWhatsAppMessage } from './whatsapp'
 import express from 'express'
@@ -8,19 +9,36 @@ app.use(express.json())
 
 // POST endpoint to send WhatsApp messages
 app.post('/send', async (req, res) => {
-    const body = req.body as SendWhatsAppMessagePayload
+    try {
+        const body = req.body as SendWhatsAppMessagePayload
 
-    if (!body.phone || !body.message) {
-        return res.status(400).json({
+        if (!body.phone || !body.message) {
+            return res.status(400).json({
+                success: false,
+                error: 'phone and message are required'
+            })
+        }
+
+        if (!sock || !isConnected) {
+            return res.status(400).json({
+                success: false,
+                error: 'WhatsApp not connected'
+            })
+        }
+
+        await sendWhatsAppMessage(body.phone, body.message)
+
+        return res.json({ success: true })
+    } catch (err: any) {
+        console.error('❌ SEND ERROR', err)
+
+        return res.status(500).json({
             success: false,
-            error: 'phone and message are required'
+            error: err.message ?? 'Failed to send message'
         })
     }
-
-    await sendWhatsAppMessage(body.phone, body.message)
-
-    return res.json({ success: true })
 })
+
 
 
 // GET endpoint to fetch current QR
@@ -42,16 +60,11 @@ app.get('/qr', (_req, res) => {
 // POST endpoint to logout WhatsApp session
 app.post('/logout', async (_req, res) => {
     try {
-        if (!sock) {
-            return res.status(400).json({
-                success: false,
-                error: 'Socket not ready'
-            })
+        if (!sock || !isConnected) {
+            return res.json({ success: true })
         }
 
         await sock.logout()
-        setQR(null)
-
         return res.json({ success: true })
     } catch (err: any) {
         return res.status(500).json({
@@ -61,12 +74,15 @@ app.post('/logout', async (_req, res) => {
     }
 })
 
+
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
-        whatsappConnected: !currentQR
+        whatsappConnected: isConnected,
+        waitingForQR: !!currentQR
     })
 })
+
 
 
 

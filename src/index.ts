@@ -5,7 +5,7 @@ import makeWASocket, {
 } from 'baileys'
 import P from 'pino'
 import { Boom } from '@hapi/boom'
-import { setSocket, setQR } from './state'
+import { setSocket, setQR, setConnected } from './state'
 import { startServer } from './server'
 
 async function startBot() {
@@ -31,10 +31,13 @@ async function startBot() {
 
         if (connection === 'open') {
             setQR(null)
+            setConnected(true)
             console.log('✅ WhatsApp conectado')
         }
 
         if (connection === 'close') {
+            setConnected(false)
+
             const reason =
                 lastDisconnect?.error instanceof Boom
                     ? lastDisconnect.error.output.statusCode
@@ -48,10 +51,10 @@ async function startBot() {
                 return
             }
 
-
             startBot()
         }
     })
+
 
     startServer(Number(process.env.PORT) || 3001)
 }

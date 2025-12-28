@@ -43,18 +43,29 @@ app.post('/send', async (req, res) => {
 
 // GET endpoint to fetch current QR
 app.get('/qr', (_req, res) => {
-    if (!currentQR) {
+    // Ya conectado, no hay QR
+    if (isConnected) {
         return res.json({
             connected: true,
             qr: null
         })
     }
 
+    // No conectado y hay QR disponible
+    if (currentQR) {
+        return res.json({
+            connected: false,
+            qr: currentQR
+        })
+    }
+
+    // No conectado y aún no hay QR
     return res.json({
         connected: false,
-        qr: currentQR
+        qr: null
     })
 })
+
 
 
 // POST endpoint to logout WhatsApp session

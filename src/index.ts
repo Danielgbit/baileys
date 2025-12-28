@@ -8,6 +8,8 @@ import { Boom } from '@hapi/boom'
 import { setSocket, setQR, setConnected } from './state'
 import { startServer } from './server'
 
+let serverStarted = false
+
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth')
 
@@ -27,14 +29,20 @@ async function startBot() {
     socket.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update
 
-        if (qr) setQR(qr)
+        // 📱 QR recibido
+        if (qr) {
+            setQR(qr)
+            console.log('📱 QR recibido')
+        }
 
+        // ✅ Conectado correctamente
         if (connection === 'open') {
             setQR(null)
             setConnected(true)
             console.log('✅ WhatsApp conectado')
         }
 
+        // ❌ Conexión cerrada
         if (connection === 'close') {
             setConnected(false)
 
@@ -45,25 +53,27 @@ async function startBot() {
 
             console.log('❌ Conexión cerrada', reason)
 
+            // 🚫 Sesión cerrada desde WhatsApp (LOGOUT REAL)
             if (reason === DisconnectReason.loggedOut) {
-                console.log('🚫 Sesión cerrada, regenerando QR')
+                console.log('🚫 Sesión cerrada, esperando nuevo QR')
                 setQR(null)
-
-                // volver a iniciar el bot para forzar nuevo QR
-                setTimeout(() => {
-                    startBot()
-                }, 1000)
-
                 return
             }
 
-
-            startBot()
+            // 🔁 Desconexión temporal → reintentar
+            console.log('🔁 Reintentando conexión...')
+            setTimeout(() => {
+                startBot()
+            }, 2000)
         }
     })
 
-
-    startServer(Number(process.env.PORT) || 3001)
+    // 🚀 Levantar Express UNA SOLA VEZ
+    if (!serverStarted) {
+        serverStarted = true
+        startServer(Number(process.env.PORT) || 3001)
+    }
 }
 
+// 🔥 Arranque inicial
 startBot()

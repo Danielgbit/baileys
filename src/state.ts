@@ -1,3 +1,4 @@
+// src/state.ts
 import type makeWASocket from 'baileys'
 
 export let sock: ReturnType<typeof makeWASocket> | null = null

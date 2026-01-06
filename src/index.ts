@@ -112,7 +112,8 @@ async function startBot() {
     })
 
     /**
-     * 📩 RECEPCIÓN DE MENSAJES ENTRANTES (DEBUG TOTAL)
+     * 📩 RECEPCIÓN DE MENSAJES ENTRANTES
+     * Soporta @s.whatsapp.net y @lid
      */
     console.log('🟢 [LISTENER] messages.upsert registrado')
 
@@ -126,18 +127,43 @@ async function startBot() {
         if (type !== 'notify') return
 
         for (const msg of messages) {
+            // Ignorar mensajes enviados por el bot
             if (msg.key.fromMe) {
                 console.log('↩️ [SKIP] Mensaje propio ignorado')
                 continue
             }
 
-            const remoteJid = msg.key.remoteJid
-            console.log('📞 [JID] remoteJid:', remoteJid)
+            // Resolver JID real (lid o normal)
+            const resolvedJid =
+                msg.key.remoteJidAlt || msg.key.remoteJid
 
-            if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) continue
+            console.log('📞 [JID] Resolved JID:', resolvedJid)
 
-            const phone = remoteJid.replace('@s.whatsapp.net', '')
+            if (!resolvedJid) continue
 
+            let phone: string | null = null
+
+            if (resolvedJid.endsWith('@s.whatsapp.net')) {
+                phone = resolvedJid.replace('@s.whatsapp.net', '')
+            } else if (resolvedJid.endsWith('@lid')) {
+                // fallback usando alt
+                if (
+                    msg.key.remoteJidAlt &&
+                    msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')
+                ) {
+                    phone = msg.key.remoteJidAlt.replace(
+                        '@s.whatsapp.net',
+                        ''
+                    )
+                }
+            }
+
+            if (!phone) {
+                console.log('⚠️ [SKIP] No se pudo resolver phone')
+                continue
+            }
+
+            // Texto del mensaje
             const message =
                 msg.message?.conversation ||
                 msg.message?.extendedTextMessage?.text ||

@@ -110,6 +110,61 @@ async function startBot() {
     })
 
     /**
+     * 📩 RECEPCIÓN DE MENSAJES ENTRANTES
+     * Aquí se dispara cuando alguien escribe al WhatsApp
+     */
+    socket.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return
+
+        for (const msg of messages) {
+            // ❌ Ignorar mensajes enviados por el bot
+            if (msg.key.fromMe) continue
+
+            const remoteJid = msg.key.remoteJid
+            if (!remoteJid || !remoteJid.endsWith('@s.whatsapp.net')) continue
+
+            // 📞 Número del cliente
+            const phone = remoteJid.replace('@s.whatsapp.net', '')
+
+            // 📝 Texto del mensaje
+            const message =
+                msg.message?.conversation ||
+                msg.message?.extendedTextMessage?.text ||
+                null
+
+            if (!message) continue
+
+            console.log('📩 MENSAJE ENTRANTE')
+            console.log({ phone, message })
+
+            /**
+             * 🚀 Enviar mensaje al webhook de n8n
+             */
+            try {
+                await fetch(
+                    'https://n8n.centrodeesteticalulu.site/webhook-test/d93072c6-f942-46ce-8998-6eb64476619e',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            phone,
+                            message,
+                            timestamp: new Date().toISOString(),
+                            source: 'whatsapp'
+                        })
+                    }
+                )
+
+                console.log('✅ Enviado a n8n')
+            } catch (error) {
+                console.error('❌ Error enviando a n8n', error)
+            }
+        }
+    })
+
+    /**
      * 🚀 Levantar Express una sola vez
      */
     if (!serverStarted) {

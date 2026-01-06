@@ -142,7 +142,7 @@ async function startBot() {
              */
             try {
                 await fetch(
-                    'https://n8n.centrodeesteticalulu.site/webhook-test/d93072c6-f942-46ce-8998-6eb64476619e',
+                    'https://n8n.centrodeesteticalulu.site/webhook-test/31433296-1118-4b03-b1a9-d57a1ea0937e',
                     {
                         method: 'POST',
                         headers: {

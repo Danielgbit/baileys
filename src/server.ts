@@ -93,6 +93,33 @@ app.get('/health', (_req, res) => {
     })
 })
 
+
+app.post('/reset', async (_req, res) => {
+    try {
+        if (!sock) {
+            return res.json({
+                success: true,
+                message: 'No active WhatsApp session'
+            })
+        }
+
+        await sock.logout()
+
+        return res.json({
+            success: true,
+            message: 'Session reset. New QR will be generated.'
+        })
+    } catch (err: any) {
+        console.error('❌ RESET ERROR', err)
+
+        return res.status(500).json({
+            success: false,
+            error: err.message
+        })
+    }
+})
+
+
 // ==============================
 // 🚀 START SERVER
 // ==============================

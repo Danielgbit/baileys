@@ -8,12 +8,17 @@ import P from 'pino'
 import { Boom } from '@hapi/boom'
 import fs from 'fs'
 
-import { setSocket, setQR, setConnected } from './state'
+import {
+    setSocket,
+    setQR,
+    setConnected,
+    currentQR
+} from './state'
+
 import { startServer } from './server'
 
 let serverStarted = false
 
-// 🧠 Control de socket y reconexiones
 let activeSocket: ReturnType<typeof makeWASocket> | null = null
 let reconnecting = false
 let restartTimeout: NodeJS.Timeout | null = null
@@ -26,7 +31,6 @@ async function startBot() {
 
     console.log('🤖 [BOT] Iniciando conexión WhatsApp...')
 
-    // 🔥 cerrar socket anterior
     if (activeSocket) {
         try {
             activeSocket.ws.close()
@@ -54,8 +58,11 @@ async function startBot() {
         const { connection, lastDisconnect, qr } = update
 
         if (qr) {
-            setQR(qr)
-            console.log('📱 QR generado')
+            // ⛔ solo guardar el primer QR
+            if (!currentQR) {
+                setQR(qr)
+                console.log('📱 QR generado')
+            }
         }
 
         if (connection === 'open') {
@@ -73,23 +80,26 @@ async function startBot() {
 
             console.log('❌ Conexión cerrada. Status:', statusCode)
 
-            // 🔥 SOLO borrar auth si WhatsApp hizo logout real
+            // logout real → limpiar sesión
             if (statusCode === DisconnectReason.loggedOut) {
-                console.log('🚫 WhatsApp cerró sesión, limpiando auth')
+                console.log('🚫 Sesión cerrada por WhatsApp')
 
                 try {
                     fs.rmSync('./auth', { recursive: true, force: true })
                 } catch {}
 
                 setQR(null)
-
                 restartLater(3000)
                 return
             }
 
-            // 🌐 errores de red → NO tocar auth
-            console.log('🌐 Error de red, reintentando luego...')
-            restartLater(15000)
+            // 🌐 errores de red → NO reiniciar si hay QR activo
+            if (!currentQR) {
+                console.log('🌐 Error de red, reintentando luego...')
+                restartLater(15000)
+            } else {
+                console.log('📱 QR activo, esperando escaneo...')
+            }
         }
     })
 

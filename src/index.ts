@@ -13,13 +13,28 @@ import { startServer } from './server'
 
 let serverStarted = false
 
+// 🧠 Control de socket y reconexiones
+let activeSocket: ReturnType<typeof makeWASocket> | null = null
+let reconnecting = false
+let restartTimeout: NodeJS.Timeout | null = null
+
 console.log('🚀 [BOOT] Proceso Node iniciado')
 
 async function startBot() {
-    console.log('🤖 [BOT] startBot() ejecutándose')
+    if (reconnecting) return
+    reconnecting = true
+
+    console.log('🤖 [BOT] Iniciando conexión WhatsApp...')
+
+    // 🔥 cerrar socket anterior
+    if (activeSocket) {
+        try {
+            activeSocket.ws.close()
+        } catch {}
+        activeSocket = null
+    }
 
     const { state, saveCreds } = await useMultiFileAuthState('./auth')
-    console.log('🔐 [AUTH] Auth state cargado')
 
     const socket = makeWASocket({
         auth: state,
@@ -30,66 +45,68 @@ async function startBot() {
         getMessage: async () => undefined
     })
 
+    activeSocket = socket
     setSocket(socket)
-    console.log('📦 [STATE] Socket guardado')
 
     socket.ev.on('creds.update', saveCreds)
 
     socket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update
 
-        console.log('🔌 [CONNECTION]', update)
-
         if (qr) {
             setQR(qr)
-            console.log('📱 [QR] Nuevo QR generado')
+            console.log('📱 QR generado')
         }
 
         if (connection === 'open') {
+            console.log('✅ WhatsApp conectado')
             setConnected(true)
             setQR(null)
-            console.log('✅ WhatsApp conectado')
+            reconnecting = false
         }
 
         if (connection === 'close') {
             setConnected(false)
 
-            const reason =
-                lastDisconnect?.error instanceof Boom
-                    ? lastDisconnect.error.output.statusCode
-                    : undefined
+            const statusCode =
+                (lastDisconnect?.error as Boom)?.output?.statusCode
 
-            console.log('❌ Conexión cerrada. Reason:', reason)
+            console.log('❌ Conexión cerrada. Status:', statusCode)
 
-            // LOGOUT real → limpiar auth y generar nuevo QR
-            if (reason === DisconnectReason.loggedOut) {
-                console.log('🚫 Sesión cerrada, limpiando auth...')
-
-                setQR(null)
-                setSocket(null as any)
+            // 🔥 SOLO borrar auth si WhatsApp hizo logout real
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log('🚫 WhatsApp cerró sesión, limpiando auth')
 
                 try {
                     fs.rmSync('./auth', { recursive: true, force: true })
-                    console.log('🧨 Auth eliminada')
-                } catch (e) {
-                    console.log('⚠️ No se pudo borrar auth')
-                }
+                } catch {}
 
-                setTimeout(startBot, 1000)
+                setQR(null)
+
+                restartLater(3000)
                 return
             }
 
-            // reconexión normal
-            console.log('🔁 Reintentando conexión...')
-            setTimeout(startBot, 2000)
+            // 🌐 errores de red → NO tocar auth
+            console.log('🌐 Error de red, reintentando luego...')
+            restartLater(15000)
         }
     })
 
-    // Levantar Express solo una vez
     if (!serverStarted) {
         serverStarted = true
         startServer(Number(process.env.PORT) || 3001)
     }
+}
+
+function restartLater(ms: number) {
+    if (restartTimeout) return
+
+    restartTimeout = setTimeout(() => {
+        restartTimeout = null
+        reconnecting = false
+        startBot()
+    }, ms)
 }
 
 // 🔥 BOOT

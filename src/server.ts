@@ -1,5 +1,4 @@
-//src/server.ts
-import { currentQR, setQR, sock, isConnected } from './state'
+import { currentQR, sock, isConnected } from './state'
 import { SendWhatsAppMessagePayload } from './types'
 import { sendWhatsAppMessage } from './whatsapp'
 import express from 'express'
@@ -7,7 +6,9 @@ import express from 'express'
 const app = express()
 app.use(express.json())
 
-// POST endpoint to send WhatsApp messages
+// ==============================
+// 📤 SEND MESSAGE
+// ==============================
 app.post('/send', async (req, res) => {
     try {
         const body = req.body as SendWhatsAppMessagePayload
@@ -39,11 +40,10 @@ app.post('/send', async (req, res) => {
     }
 })
 
-
-
-// GET endpoint to fetch current QR
+// ==============================
+// 📱 GET QR
+// ==============================
 app.get('/qr', (_req, res) => {
-    // Ya conectado, no hay QR
     if (isConnected) {
         return res.json({
             connected: true,
@@ -51,33 +51,30 @@ app.get('/qr', (_req, res) => {
         })
     }
 
-    // No conectado y hay QR disponible
-    if (currentQR) {
-        return res.json({
-            connected: false,
-            qr: currentQR
-        })
-    }
-
-    // No conectado y aún no hay QR
     return res.json({
         connected: false,
-        qr: null
+        qr: currentQR
     })
 })
 
-
-
-// POST endpoint to logout WhatsApp session
+// ==============================
+// 🔐 LOGOUT
+// ==============================
 app.post('/logout', async (_req, res) => {
     try {
-        if (!sock || !isConnected) {
+        if (!sock) {
             return res.json({ success: true })
         }
 
         await sock.logout()
-        return res.json({ success: true })
+
+        return res.json({
+            success: true,
+            message: 'Session closed. New QR will be generated.'
+        })
     } catch (err: any) {
+        console.error('❌ LOGOUT ERROR', err)
+
         return res.status(500).json({
             success: false,
             error: err.message
@@ -85,22 +82,20 @@ app.post('/logout', async (_req, res) => {
     }
 })
 
-
+// ==============================
+// ❤️ HEALTH
+// ==============================
 app.get('/health', (_req, res) => {
     res.json({
         status: 'ok',
         whatsappConnected: isConnected,
-        waitingForQR: !!currentQR
+        waitingForQR: !isConnected && !!currentQR
     })
 })
 
-
-
-
-/**
- * Starts the Express server on the specified port
- * @param port - Port number to listen on
- */
+// ==============================
+// 🚀 START SERVER
+// ==============================
 export function startServer(port: number): void {
     app.listen(port, () => {
         console.log(`🚀 Server running on port ${port}`)

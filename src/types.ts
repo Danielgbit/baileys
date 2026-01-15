@@ -1,3 +1,4 @@
+// src/types.ts
 /**
  * Payload para enviar mensajes de WhatsApp
  * Usado por:

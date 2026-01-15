@@ -1,52 +1,25 @@
-// ==============================
-// 📦 IMPORTS
-// ==============================
-
-// Baileys: core de WhatsApp
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
     Browsers
 } from 'baileys'
 
-// Logger (silenciado para Baileys, NO para console.log)
 import P from 'pino'
-
-// Manejo de errores de conexión
 import { Boom } from '@hapi/boom'
+import fs from 'fs'
 
-// Estado global compartido
 import { setSocket, setQR, setConnected } from './state'
-
-// Servidor Express
 import { startServer } from './server'
 
-// ==============================
-// 🔒 CONTROL DE SERVIDOR
-// ==============================
-
-// Evita levantar Express más de una vez
 let serverStarted = false
 
 console.log('🚀 [BOOT] Proceso Node iniciado')
 
-// ==============================
-// 🤖 FUNCIÓN PRINCIPAL DEL BOT
-// ==============================
-
 async function startBot() {
     console.log('🤖 [BOT] startBot() ejecutándose')
 
-    /**
-     * 🔐 Autenticación persistente
-     */
     const { state, saveCreds } = await useMultiFileAuthState('./auth')
     console.log('🔐 [AUTH] Auth state cargado')
-
-    /**
-     * 📲 Crear socket de WhatsApp
-     */
-    console.log('📲 [SOCKET] Creando socket de WhatsApp')
 
     const socket = makeWASocket({
         auth: state,
@@ -57,37 +30,25 @@ async function startBot() {
         getMessage: async () => undefined
     })
 
-    console.log('📲 [SOCKET] Socket creado')
-
-    // Guardar socket globalmente
     setSocket(socket)
-    console.log('📦 [STATE] Socket guardado en state')
+    console.log('📦 [STATE] Socket guardado')
 
-    /**
-     * 💾 Guardar credenciales cuando cambian
-     */
-    socket.ev.on('creds.update', () => {
-        console.log('💾 [AUTH] Credenciales actualizadas')
-        saveCreds()
-    })
+    socket.ev.on('creds.update', saveCreds)
 
-    /**
-     * 🔌 Estado de conexión WhatsApp
-     */
-    socket.ev.on('connection.update', (update) => {
-        console.log('🔌 [CONNECTION] Update:', update)
-
+    socket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update
+
+        console.log('🔌 [CONNECTION]', update)
 
         if (qr) {
             setQR(qr)
-            console.log('📱 [QR] QR recibido')
+            console.log('📱 [QR] Nuevo QR generado')
         }
 
         if (connection === 'open') {
-            setQR(null)
             setConnected(true)
-            console.log('✅ [CONNECTION] WhatsApp conectado')
+            setQR(null)
+            console.log('✅ WhatsApp conectado')
         }
 
         if (connection === 'close') {
@@ -98,135 +59,40 @@ async function startBot() {
                     ? lastDisconnect.error.output.statusCode
                     : undefined
 
-            console.log('❌ [CONNECTION] Conexión cerrada. Reason:', reason)
+            console.log('❌ Conexión cerrada. Reason:', reason)
 
+            // LOGOUT real → limpiar auth y generar nuevo QR
             if (reason === DisconnectReason.loggedOut) {
-                console.log('🚫 [LOGOUT] Sesión cerrada desde WhatsApp')
+                console.log('🚫 Sesión cerrada, limpiando auth...')
+
                 setQR(null)
+                setSocket(null as any)
+
+                try {
+                    fs.rmSync('./auth', { recursive: true, force: true })
+                    console.log('🧨 Auth eliminada')
+                } catch (e) {
+                    console.log('⚠️ No se pudo borrar auth')
+                }
+
+                setTimeout(startBot, 1000)
                 return
             }
 
-            console.log('🔁 [RECONNECT] Reintentando conexión en 2s...')
+            // reconexión normal
+            console.log('🔁 Reintentando conexión...')
             setTimeout(startBot, 2000)
         }
     })
 
-    /**
-     * 📩 RECEPCIÓN DE MENSAJES ENTRANTES
-     * Soporta @s.whatsapp.net y @lid
-     */
-    console.log('🟢 [LISTENER] messages.upsert registrado')
-
-    socket.ev.on('messages.upsert', async (data) => {
-        console.log(
-            '🟡 [RAW messages.upsert]',
-            JSON.stringify(data, null, 2)
-        )
-
-        const { messages, type } = data
-        if (type !== 'notify') return
-
-        for (const msg of messages) {
-            // Ignorar mensajes enviados por el bot
-            if (msg.key.fromMe) {
-                console.log('↩️ [SKIP] Mensaje propio ignorado')
-                continue
-            }
-
-            // Resolver JID real (lid o normal)
-            const resolvedJid =
-                msg.key.remoteJidAlt || msg.key.remoteJid
-
-            console.log('📞 [JID] Resolved JID:', resolvedJid)
-
-            if (!resolvedJid) continue
-
-            let phone: string | null = null
-
-            if (resolvedJid.endsWith('@s.whatsapp.net')) {
-                phone = resolvedJid.replace('@s.whatsapp.net', '')
-            } else if (resolvedJid.endsWith('@lid')) {
-                // fallback usando alt
-                if (
-                    msg.key.remoteJidAlt &&
-                    msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')
-                ) {
-                    phone = msg.key.remoteJidAlt.replace(
-                        '@s.whatsapp.net',
-                        ''
-                    )
-                }
-            }
-
-            if (!phone) {
-                console.log('⚠️ [SKIP] No se pudo resolver phone')
-                continue
-            }
-
-            // Texto del mensaje
-            const message =
-                msg.message?.conversation ||
-                msg.message?.extendedTextMessage?.text ||
-                null
-
-            console.log('📝 [MESSAGE] Texto:', message)
-
-            if (!message) continue
-
-            console.log('📩 [INCOMING] Mensaje válido recibido', {
-                phone,
-                message
-            })
-
-            /**
-             * 🚀 Enviar mensaje al webhook de n8n
-             */
-            try {
-                console.log('🌐 [WEBHOOK] Enviando a n8n...')
-
-                const response = await fetch(
-                    'https://n8n.centrodeesteticalulu.site/webhook-test/31433296-1118-4b03-b1a9-d57a1ea0937e',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            phone,
-                            message,
-                            timestamp: new Date().toISOString(),
-                            source: 'whatsapp'
-                        })
-                    }
-                )
-
-                console.log(
-                    '✅ [WEBHOOK] Enviado a n8n. Status:',
-                    response.status
-                )
-            } catch (error) {
-                console.error(
-                    '❌ [WEBHOOK ERROR] Error enviando a n8n',
-                    error
-                )
-            }
-        }
-    })
-
-    /**
-     * 🚀 Levantar Express una sola vez
-     */
+    // Levantar Express solo una vez
     if (!serverStarted) {
         serverStarted = true
-        console.log('🚀 [SERVER] Iniciando Express')
         startServer(Number(process.env.PORT) || 3001)
     }
 }
 
-// ==============================
-// 🔥 ARRANQUE INICIAL
-// ==============================
-
+// 🔥 BOOT
 startBot().catch((err) => {
-    console.error('🔥 [FATAL] Error al iniciar el bot', err)
+    console.error('🔥 FATAL', err)
 })
